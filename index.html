@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Siyasi Simülasyon Clicker</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    h1 { color: #ffcc00; }
+    .stats { font-size: 1.2em; margin: 10px 0; }
+    #clickArea {
+      background: #333;
+      padding: 20px;
+      margin: 20px auto;
+      width: 300px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 20px;
+    }
+    .power-up {
+      background: #222;
+      margin: 5px;
+      padding: 10px;
+      border: 1px solid #666;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .power-up.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #conversation {
+      background: #222;
+      border-radius: 10px;
+      margin-top: 20px;
+      padding: 15px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+    }
+    #userImage {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      margin-bottom: 10px;
+    }
+    #userImage.wrong { border-color: red; }
+    .answer-btn {
+      margin: 5px;
+      padding: 10px 15px;
+      background: #444;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+    }
+    .answer-btn:hover {
+      background: #666;
+    }
+    #bodyguard-btn, #hide-btn {
+      margin: 10px;
+      padding: 10px 15px;
+      background: #ffcc00;
+      color: #000;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Komutanın Siyasi Clicker'ı</h1>
+<div class="stats">Para: <span id="money">0</span> ₺</div>
+<div class="stats">Seçmen: <span id="voters">0</span></div>
+<div class="stats">Temsilci: <span id="representatives">0</span></div>
+<div class="stats">Güvenilirlik: <span id="reliability">100</span></div>
+<div class="stats">Bodyguard: <span id="bodyguards">0</span></div>
+
+<div id="clickArea">KLIK! (Para Kazan)</div>
+
+<h2>Power-Uplar</h2>
+<div id="powerUpsList"></div>
+
+<div id="conversation">
+  <img id="userImage" src="sen.png" alt="Sen">
+  <h3 id="question">Soru gelecek</h3>
+  <div id="answers"></div>
+  <p id="message"></p>
+  <button id="bodyguard-btn">Bodyguard Kullan</button>
+  <button id="hide-btn">Saklan</button>
+</div>
+
+<script>
+  let money = 0;
+  let voters = 0;
+  let representatives = 0;
+  let reliability = 100;
+  let bodyguards = 0;
+  let clickValue = 1;
+  let conversationActive = false;
+  let questionIndex = 0;
+  let conversationTimeout = null;
+  let bodyguardActive = false;
+
+  const voterIncomePerSecond = 1;
+  const representativeIncomePerSecond = 5;
+  const snipProbability = 0.3;
+
+  const questions = [
+    {
+      question: "Halk için ne vaat edersin?",
+      answers: [
+        { text: "Bedava internet", correct: true },
+        { text: "Vergi artışı", correct: false },
+        { text: "Daha çok vergi", correct: false }
+      ]
+    },
+    {
+      question: "Yolsuzluk hakkında ne düşünüyorsun?",
+      answers: [
+        { text: "Kesinlikle karşıyım", correct: true },
+        { text: "Gerekirse olabilir", correct: false },
+        { text: "Ben yapmam, arkadaşlar yapar", correct: false }
+      ]
+    }
+  ];
+
+  const powerUps = [
+    {
+      name: "Seçmen Satın Al",
+      cost: 50,
+      buy: () => {
+        money -= 50;
+        voters += 1;
+        updateUI();
+      }
+    },
+    {
+      name: "Temsilci Tut",
+      cost: 150,
+      buy: () => {
+        money -= 150;
+        representatives += 1;
+        updateUI();
+      }
+    },
+    {
+      name: "Bodyguard Kirala",
+      cost: 200,
+      buy: () => {
+        money -= 200;
+        bodyguards += 1;
+        updateUI();
+      }
+    }
+  ];
+
+  const updateUI = () => {
+    document.getElementById("money").textContent = money.toFixed(0);
+    document.getElementById("voters").textContent = voters;
+    document.getElementById("representatives").textContent = representatives;
+    document.getElementById("reliability").textContent = reliability.toFixed(0);
+    document.getElementById("bodyguards").textContent = bodyguards;
+
+    const list = document.getElementById("powerUpsList");
+    list.innerHTML = "";
+    powerUps.forEach(pu => {
+      const div = document.createElement("div");
+      div.className = "power-up" + (money < pu.cost ? " disabled" : "");
+      div.textContent = `${pu.name} (₺${pu.cost})`;
+      if (money >= pu.cost) {
+        div.onclick = pu.buy;
+      }
+      list.appendChild(div);
+    });
+  };
+
+  document.getElementById("clickArea").onclick = () => {
+    money += clickValue;
+    updateUI();
+  };
+
+  setInterval(() => {
+    money += voters * voterIncomePerSecond;
+    money += representatives * representativeIncomePerSecond;
+    updateUI();
+  }, 1000);
+
+  function startConversation() {
+    if (conversationActive) return;
+    conversationActive = true;
+    questionIndex = 0;
+    document.getElementById("conversation").style.display = "flex";
+    nextQuestion();
+  }
+
+  function stopConversation() {
+    conversationActive = false;
+    document.getElementById("conversation").style.display = "none";
+  }
+
+  function nextQuestion() {
+    if (questionIndex >= questions.length) {
+      stopConversation();
+      return;
+    }
+
+    const q = questions[questionIndex];
+    document.getElementById("question").textContent = q.question;
+    document.getElementById("answers").innerHTML = "";
+    document.getElementById("message").textContent = "";
+    document.getElementById("userImage").classList.remove("wrong");
+
+    q.answers.forEach(ans => {
+      const btn = document.createElement("button");
+      btn.className = "answer-btn";
+      btn.textContent = ans.text;
+      btn.onclick = () => {
+        clearTimeout(conversationTimeout);
+        if (ans.correct) {
+          money += 50;
+          reliability = Math.min(100, reliability + 3);
+          document.getElementById("message").textContent = "Doğru cevap!";
+        } else {
+          reliability = Math.max(0, reliability - 7);
+          document.getElementById("message").textContent = "Yanlış cevap!";
+          document.getElementById("userImage").classList.add("wrong");
+
+          if (bodyguards > 0 && !bodyguardActive) {
+            bodyguardActive = true;
+            document.getElementById("message").textContent += " Bodyguard seni korudu!";
+            setTimeout(() => { bodyguardActive = false; }, 5000);
+          } else if (Math.random() < snipProbability) {
+            money = Math.max(0, money - 100);
+            voters = Math.max(0, voters - 5);
+            document.getElementById("message").textContent += " Sniper saldırdı!";
+          }
+        }
+        updateUI();
+        questionIndex++;
+        conversationTimeout = setTimeout(nextQuestion, 5000);
+      };
+      document.getElementById("answers").appendChild(btn);
+    });
+
+    conversationTimeout = setTimeout(() => {
+      reliability = Math.max(0, reliability - 10);
+      document.getElementById("message").textContent = "Süre doldu!";
+      document.getElementById("userImage").classList.add("wrong");
+      questionIndex++;
+      updateUI();
+      nextQuestion();
+    }, 5000);
+  }
+
+  setInterval(() => {
+    if (!conversationActive) startConversation();
+  }, 20000);
+
+  document.getElementById("bodyguard-btn").onclick = () => {
+    if (bodyguards > 0) {
+      bodyguardActive = true;
+      bodyguards--;
+      document.getElementById("message").textContent = "Bodyguard aktif!";
+      updateUI();
+      setTimeout(() => {
+        bodyguardActive = false;
+        document.getElementById("message").textContent = "";
+      }, 5000);
+    } else {
+      alert("Bodyguardın yok!");
+    }
+  };
+
+  document.getElementById("hide-btn").onclick = stopConversation;
+
+  updateUI();
+</script>
+
+</body>
+</html>
